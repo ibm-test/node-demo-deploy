@@ -10,10 +10,14 @@ permissions:
       group: ubuntu
 hooks:
   AfterInstall:
-    - location: scripts/aws/install.sh
+    - location: scripts/install.sh
       timeout: 600
       runas: ubuntu
   ApplicationStart:
-    - location: scripts/aws/start.sh
+    - location: scripts/start.sh
+      timeout: 120
+      runas: ubuntu
+  ApplicationStop:
+    - location: scripts/stop.sh
       timeout: 120
       runas: ubuntu

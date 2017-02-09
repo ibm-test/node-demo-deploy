@@ -1,49 +1,10 @@
 #!/bin/bash
 
-# deploy.sh - A script to deploy to various clouds
+# deploy_aws.sh - A script to deploy to Amazon Web Services
 
-##### Constants
+# $AWS_DEPLOYMENT_GROUP
+# $AWS_DEPLOYMENT_CONFIG_NAME
 
-# $APPLICATION_NAME
-
-# $AWS_KEY
-# $AWS_SECRET
-# $AWS_REGION
-
-# $AZURE_USER
-# $AZURE_PASS
-
-
-##### Main Functions
-
-deployBluemix() {
-	echo "Deploying to IBM Bluemix..."
-
-	cf push "$APPLICATION_NAME"
-
-}	# end of deployBluemix
-
-deployAzure() {
-    echo "Deploying to Microsoft Azure..."
-
-    installAzureCli
-    echo "Installing Azure CLI succeeded"
-
-    # https://docs.microsoft.com/en-us/azure/app-service-web/app-service-web-nodejs-get-started-cli-nodejs
-    azure login -u $AZURE_USER -p $AZURE_PASS
-    azure site deployment user set -u $AZURE_USER -p $AZURE_PASS
-    echo "Successfully configured Azure user and pass"
-
-    azure site create --git --location centralus $APPLICATION_NAME
-	echo "Application creation succeded"
-
-	git remote add azure https://$AZURE_USER:$AZURE_PASS@localgitdeployment.scm.azurewebsites.net:443/localgitdeployment.git
-	git push azure master
-	echo "Application deployed to Azure"
-
-	azure site location list
-
-}   # end of deployAzure
 
 deployAws() {
     echo "Deploying to Amazon Web Services..."
@@ -61,23 +22,80 @@ deployAws() {
   	echo "Successfully configured AWS deploy key, deploy secret and default region"
 
     # Create AWS Code Deploy Application if one doesn't exist
-    $(aws deploy get-application --application-name $APPLICATION_NAME 2>&1)
+    aws deploy get-application --application-name $APPLICATION_NAME
     if [ $? -ne 0 ]; then
-    	echo "Creating AWS Code Deploy Application"
+    	echo "Creating AWS Code Deploy Application..."
     	runCommand "aws deploy create-application --application-name $APPLICATION_NAME"
     	echo "Application creation succeded"
+    else
+      echo "AWS Code Deploy Application found!"
     fi
+
+
+    # Create AWS Deploy group if one doesn't exist
+    # aws iam get-role --role-name CodeDeployServiceRole --query "Role.Arn" --output text
+    aws deploy get-deployment-group --application-name $APPLICATION_NAME --deployment-group-name $AWS_DEPLOYMENT_GROUP
+    if [ $? -ne 0 ]; then
+    	echo "Creating AWS Code Deploy Group..."
+
+      if [ ! -n "$EC2_TAG_FILTERS" ]; then
+        echo "Using existing EC2 instance..."
+      else
+        echo "Creating new EC2 instance..."
+
+        aws ec2 run-instances \
+          --image-id $AWS_EC2_AMI \
+          --key-name $APPLICATION_NAME \
+          --user-data file://instance.sh \
+          --count 1 \
+          --instance-type $EC2_INSTANCE_TYPE \
+          --iam-instance-profile Name=$AWS_IAM_INSTANCE_NAME
+
+        ec2InstanceId="$(aws ec2 describe-instances \
+          --filters "Name=key-name,Values=$APPLICATION_NAME" \
+          --query "Reservations[*].Instances[*].[InstanceId]" \
+          --output text)"
+
+        aws ec2 create-tags --resources $ec2InstanceId --tags Key=Name,Value=$APPLICATION_NAME
+
+        echo "Instance Launched?"
+        aws ec2 describe-instance-status --instance-ids $ec2InstanceId --query "InstanceStatuses[*].InstanceStatus.[Status]" --output text
+      fi
+
+    	runCommand "aws deploy create-deployment-group \
+        --application-name $APPLICATION_NAME \
+        --deployment-group-name $AWS_DEPLOYMENT_GROUP \
+        --deployment-config-name CodeDeployDefault.AllAtOnce \
+        --ec2-tag-filters $EC2_TAG_FILTERS \
+        --service-role-arn $AWS_SERVICE_ROLE_ARN"
+    	echo "Deploy Group creation succeded"
+    else
+      echo "AWS Code Deploy Group found!"
+    fi
+
 
     # Create deployment and deploy app with default config
     # http://docs.aws.amazon.com/cli/latest/reference/deploy/create-deployment.html
-    DEPLOYMENT_ID = "$(aws deploy create-deployment --application-name $APPLICATION_NAME)"
-    echo "Success created deployment"
-    echo "You can follow your deployment at: https://console.aws.amazon.com/codedeploy/home#/deployments/$DEPLOYMENT_ID"
+    latestCommitId=$(git ls-remote https://github.com/$GIT_URL HEAD | awk '{ print $1 }' 2>&1)
+    echo "Latest commit ID: $latestCommitId"
+    
+    DEPLOYMENT_ID=$(aws deploy create-deployment \
+      --application-name $APPLICATION_NAME  \
+      --deployment-group-name $AWS_DEPLOYMENT_GROUP \
+      --github-location commitId=$latestCommitId,repository=$GIT_URL 2>&1)
+    if [ $? -ne 0 ]; then
+  		echo "Deploy failed..."
+      exit 1
+    else
+    	echo "Successfully created deployment"
+    	echo "You can follow your deployment at: https://console.aws.amazon.com/codedeploy/home#/deployments/"
+    fi
+
+    # echo "Monitoring deployment..."
+    # aws deploy get-deployment --deployment-id \"$DEPLOYMENT_ID\"
+    # aws deploy get-deployment-instance --deployment-id $DEPLOYMENT_ID --instance-id $ec2InstanceId
 
 }   # end of deployAws
-
-
-##### Helper Functions
 
 runCommand() {
 	command="$1"
@@ -99,55 +117,36 @@ typeExists() {
 
 installAwsCli() {
 	if ! typeExists "pip"; then
-		echo "Installing Python PIP"
+		echo "Installing Python PIP..."
 		runCommand "sudo apt-get install -y python-pip"
 		echo "Installing PIP succeeded"
 	fi
   
-	echo "Installing AWS CLI"
+	echo "Installing AWS CLI..."
 	runCommand "sudo pip install awscli"
 }
-
-installAzureCli() {
-	if ! typeExists "npm"; then
-		runCommand "sudo apt-get install curl"
-	fi
-
-	if ! typeExists "npm"; then
-    	echo "Installing Python PIP"
-		curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
-		runCommand "sudo apt-get install -y nodejs"
-	fi
-
-	echo "Installing AWS CLI"
-	runCommand "sudo npm install azure-cli"
-}
-
 
 ##### Main
 
 if [ -z "$APPLICATION_NAME" ]; then
-  echo "Please set the \"\$AWS_APPLICATION_NAME\" variable"
+  echo "Please set the \"\$APPLICATION_NAME\" variable"
   exit 1
 fi
 
-while [ "$1" != "" ]; do
-    case $1 in
-    	-bluemix | --microsoft-azure )
-			deployBluemix
-			exit
-            ;;
-        -azure | --microsoft-azure )
-			deployAzure
-			exit
-            ;;
-        -aws | --amazon-web-services )       
-			deployAws
-            exit
-            ;;
-        * )                     
-			echo 'Error: Please select a cloud environnmet by running deploy.sh (-azure | -aws)'
-            exit 1
-    esac
-    shift
-done
+if [ -z "$AWS_KEY" ]; then
+  echo "Please set the \"\$AWS_KEY\" variable"
+  exit 1
+fi
+
+if [ -z "$AWS_SECRET" ]; then
+  echo "Please set the \"\$AWS_SECRET\" variable"
+  exit 1
+fi
+
+if [ -z "$AWS_REGION" ]; then
+  echo "Please set the \"\$AWS_REGION\" variable"
+  exit 1
+fi
+
+deployAws
+
