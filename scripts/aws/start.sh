@@ -1,4 +1,4 @@
 #!/bin/bash
 
 cd ~/node
-node index
+npm run start

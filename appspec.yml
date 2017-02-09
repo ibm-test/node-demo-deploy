@@ -1,22 +1,19 @@
 version: 0.0
 os: linux
 files:
-  - source: /
-    destination: /home/ubuntu/node
-
+    - source: /
+      destination: /home/ubuntu/node
 permissions:
-- object: /
-   pattern: "**"
-   owner: ubuntu
-   group: ubuntu
-
+    - object: /
+      pattern: "**"
+      owner: ubuntu
+      group: ubuntu
 hooks:
-AfterInstall:
-   - location: scripts/aws/install.sh
-     timeout: 1500
-     runas: ubuntu
-
-ApplicationStart:
-   - location: scripts/aws/start.sh
-     timeout: 60
-     runas: ubuntu
+  AfterInstall:
+    - location: scripts/aws/install.sh
+      timeout: 600
+      runas: ubuntu
+  ApplicationStart:
+    - location: scripts/aws/start.sh
+      timeout: 120
+      runas: ubuntu

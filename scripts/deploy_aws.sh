@@ -62,6 +62,7 @@ deployAws() {
     	runCommand "aws deploy create-deployment-group \
         --application-name $APPLICATION_NAME \
         --deployment-group-name $AWS_DEPLOYMENT_GROUP \
+        --deployment-config-name CodeDeployDefault.AllAtOnce \
         --ec2-tag-filters $EC2_TAG_FILTERS \
         --service-role-arn $AWS_SERVICE_ROLE_ARN"
     	echo "Deploy Group creation succeded"
@@ -82,6 +83,10 @@ deployAws() {
     	echo "Successfully created deployment"
     	echo "You can follow your deployment at: https://console.aws.amazon.com/codedeploy/home#/deployments/"
     fi
+
+    DEPLOYMENT_GET="aws deploy get-deployment --deployment-id \"$DEPLOYMENT_ID\""
+    echo "Monitoring deployment..."
+    echo DEPLOYMENT_GET
 
 }   # end of deployAws
 
