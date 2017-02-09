@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# deploy - A script to deploy to various clouds
+# deploy.sh - A script to deploy to various clouds
 
 ##### Constants
 
@@ -19,7 +19,7 @@
 deployBluemix() {
 	echo "Deploying to IBM Bluemix..."
 
-	cf push "$CF_APP"
+	cf push "$APPLICATION_NAME"
 
 }	# end of deployBluemix
 
@@ -81,15 +81,11 @@ deployAws() {
 
 runCommand() {
 	command="$1"
-	info "$1"
 	output="$(eval $command 2>&1)"
 	ret_code=$?
 
 	if [ $? != 0 ]; then
 		echo "$output"
-		if [ ! -z "$2" ]; then
-	  		echo "$2"
-		fi
 		exit $ret_code
 	fi
 }
@@ -130,13 +126,8 @@ installAzureCli() {
 
 ##### Main
 
-if [ -z "$AWS_APPLICATION_NAME" ]; then
-  error "Please set the \"\$AWS_APPLICATION_NAME\" variable"
-  exit 1
-fi
-
-if [ -z "$AWS_DEPLOYMENT_GROUP_NAME" ]; then
-  error "Please set the \"\$AWS_DEPLOYMENT_GROUP_NAME\" variable"
+if [ -z "$APPLICATION_NAME" ]; then
+  echo "Please set the \"\$AWS_APPLICATION_NAME\" variable"
   exit 1
 fi
 
